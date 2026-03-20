@@ -1,0 +1,28 @@
+{
+  "name": "wpsuite-cognito-sar",
+  "version": "0.1.0",
+  "description": "AWS SAR project for WP Suite Cognito infrastructure",
+  "private": true,
+  "scripts": {
+    "build": "bash scripts/build.sh",
+    "build:layer": "bash scripts/build-layer.sh",
+    "test": "jest",
+    "test:unit": "jest tests/unit",
+    "upload": "bash scripts/upload-artifacts.sh",
+    "publish": "bash scripts/publish-sar.sh",
+    "validate:template": "sam validate --lint --template template.yaml"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.161",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^25.3.5",
+    "esbuild": "^0.27.3",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.9.3",
+    "yaml": "^2.8.2"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}
