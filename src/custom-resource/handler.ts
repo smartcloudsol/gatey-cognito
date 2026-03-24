@@ -14,12 +14,22 @@ import {
   ListObjectsV2Command,
 } from "@aws-sdk/client-s3";
 import {
+  DeleteParameterCommand,
+  PutParameterCommand,
+  SSMClient,
+} from "@aws-sdk/client-ssm";
+import {
   CreateEmailIdentityCommand,
   DeleteEmailIdentityCommand,
   GetEmailIdentityCommand,
 } from "@aws-sdk/client-sesv2";
 import { sendCloudFormationResponse } from "../shared/cfn-response";
-import { cognitoClient, route53Client, s3Client, sesClient } from "../shared/aws-clients";
+import {
+  cognitoClient,
+  route53Client,
+  s3Client,
+  sesClient,
+} from "../shared/aws-clients";
 
 type Event = {
   RequestType: "Create" | "Update" | "Delete";
@@ -33,6 +43,7 @@ type Event = {
 };
 
 const CLOUDFRONT_ZONE_ID = "Z2FDTNDATAQYW2";
+const ssmClient = new SSMClient({});
 
 async function findHostedZoneId(fqdn: string): Promise<string | undefined> {
   const labels = fqdn.replace(/\.$/, "").split(".");
@@ -47,7 +58,11 @@ async function findHostedZoneId(fqdn: string): Promise<string | undefined> {
   return undefined;
 }
 
-async function upsertAliasRecords(hostedZoneId: string, recordName: string, aliasDnsName: string): Promise<void> {
+async function upsertAliasRecords(
+  hostedZoneId: string,
+  recordName: string,
+  aliasDnsName: string,
+): Promise<void> {
   await route53Client.send(
     new ChangeResourceRecordSetsCommand({
       HostedZoneId: hostedZoneId,
@@ -69,7 +84,11 @@ async function upsertAliasRecords(hostedZoneId: string, recordName: string, alia
   );
 }
 
-async function deleteAliasRecords(hostedZoneId: string, recordName: string, aliasDnsName: string): Promise<void> {
+async function deleteAliasRecords(
+  hostedZoneId: string,
+  recordName: string,
+  aliasDnsName: string,
+): Promise<void> {
   await route53Client.send(
     new ChangeResourceRecordSetsCommand({
       HostedZoneId: hostedZoneId,
@@ -91,7 +110,10 @@ async function deleteAliasRecords(hostedZoneId: string, recordName: string, alia
   );
 }
 
-async function upsertCnameRecords(hostedZoneId: string, records: Array<{ name: string; value: string }>): Promise<void> {
+async function upsertCnameRecords(
+  hostedZoneId: string,
+  records: Array<{ name: string; value: string }>,
+): Promise<void> {
   if (!records.length) return;
   await route53Client.send(
     new ChangeResourceRecordSetsCommand({
@@ -111,7 +133,10 @@ async function upsertCnameRecords(hostedZoneId: string, records: Array<{ name: s
   );
 }
 
-async function deleteCnameRecords(hostedZoneId: string, records: Array<{ name: string; value: string }>): Promise<void> {
+async function deleteCnameRecords(
+  hostedZoneId: string,
+  records: Array<{ name: string; value: string }>,
+): Promise<void> {
   if (!records.length) return;
   await route53Client.send(
     new ChangeResourceRecordSetsCommand({
@@ -133,7 +158,8 @@ async function deleteCnameRecords(hostedZoneId: string, records: Array<{ name: s
 
 async function handleHostedZoneLookup(props: Record<string, string>) {
   const hostedZoneId = await findHostedZoneId(props.DomainName);
-  if (!hostedZoneId) throw new Error(`Hosted zone not found for domain: ${props.DomainName}`);
+  if (!hostedZoneId)
+    throw new Error(`Hosted zone not found for domain: ${props.DomainName}`);
   return { HostedZoneId: hostedZoneId };
 }
 
@@ -143,7 +169,9 @@ async function resolveAliasTarget(cognitoDomain: string): Promise<string> {
   );
   const aliasDnsName = domainInfo.DomainDescription?.CloudFrontDistribution;
   if (!aliasDnsName) {
-    throw new Error("Could not resolve Cognito custom domain CloudFront distribution");
+    throw new Error(
+      "Could not resolve Cognito custom domain CloudFront distribution",
+    );
   }
   return aliasDnsName;
 }
@@ -153,7 +181,11 @@ async function handleRoute53Alias(event: Event, props: Record<string, string>) {
 
   if (event.RequestType === "Delete") {
     try {
-      await deleteAliasRecords(props.HostedZoneId, props.RecordName, aliasDnsName);
+      await deleteAliasRecords(
+        props.HostedZoneId,
+        props.RecordName,
+        aliasDnsName,
+      );
     } catch {
       // best effort cleanup
     }
@@ -188,11 +220,17 @@ async function handleBucketCleaner(props: Record<string, string>) {
   let token: string | undefined;
   do {
     const page = await s3Client.send(
-      new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ContinuationToken: token }),
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        ContinuationToken: token,
+      }),
     );
     for (const obj of page.Contents || []) {
       if (obj.Key) {
-        await s3Client.send(new DeleteObjectCommand({ Bucket: bucket, Key: obj.Key }));
+        await s3Client.send(
+          new DeleteObjectCommand({ Bucket: bucket, Key: obj.Key }),
+        );
       }
     }
     token = page.NextContinuationToken;
@@ -200,7 +238,10 @@ async function handleBucketCleaner(props: Record<string, string>) {
   return { CleanedBucket: bucket };
 }
 
-async function handleS3TemplateUpload(event: Event, props: Record<string, string>) {
+async function handleS3TemplateUpload(
+  event: Event,
+  props: Record<string, string>,
+) {
   const destinationBucket = props.BucketName;
   const destinationPrefix = props.Prefix || "email-templates/";
   const sourceBucket = props.SourceBucketName;
@@ -256,11 +297,48 @@ async function handleS3TemplateUpload(event: Event, props: Record<string, string
   };
 }
 
-function pruneUndefined<T extends object>(input: T): T {
-  return Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined)) as T;
+async function handleSSMParameter(event: Event, props: Record<string, string>) {
+  const name = props.Name;
+  const value = props.Value || "";
+  const keyId = props.KeyId || undefined;
+
+  if (!name) {
+    throw new Error("Name is required for SSMParameter");
+  }
+
+  if (event.RequestType === "Delete") {
+    try {
+      await ssmClient.send(new DeleteParameterCommand({ Name: name }));
+    } catch {
+      // best effort cleanup
+    }
+    return { Name: name };
+  }
+
+  await ssmClient.send(
+    new PutParameterCommand({
+      Name: name,
+      Value: value,
+      Type: "SecureString",
+      Overwrite: true,
+      KeyId: keyId,
+    }),
+  );
+
+  return { Name: name };
 }
 
-function setOrUnset(lambdaConfig: LambdaConfigType, key: keyof LambdaConfigType, value?: string) {
+function pruneUndefined<T extends object>(input: T): T {
+  return Object.fromEntries(
+    Object.entries(input).filter(([, v]) => v !== undefined),
+  ) as T;
+}
+
+function setOrUnset(
+  lambdaConfig: LambdaConfigType,
+  key: keyof LambdaConfigType,
+  value?: string,
+) {
   if (value) {
     (lambdaConfig as Record<string, unknown>)[key] = value;
   } else {
@@ -283,32 +361,53 @@ function hasValue(list: string[], value: string): boolean {
   return list.includes(value);
 }
 
-function resolveVerificationAttributes(props: Record<string, string>): string[] {
+function resolveVerificationAttributes(
+  props: Record<string, string>,
+): string[] {
   if (!parseBool(props.VerifyAttributeChanges)) return [];
   const mode = props.VerifyAttributeChangesMode || "auto";
   if (mode === "email") return ["email"];
   if (mode === "phone_number") return ["phone_number"];
   if (mode === "email_and_phone") return ["email", "phone_number"];
-  if (parseBool(props.RequirePhoneNumberAttribute)) return ["email", "phone_number"];
+  if (parseBool(props.RequirePhoneNumberAttribute))
+    return ["email", "phone_number"];
   return ["email"];
 }
 
-function resolveAutoVerifiedAttributes(props: Record<string, string>): string[] {
+function resolveAutoVerifiedAttributes(
+  props: Record<string, string>,
+): string[] {
   const loginMechanisms = parseList(props.LoginMechanisms);
   const values: string[] = [];
-  if (hasValue(loginMechanisms, "email") || parseBool(props.RequireEmailAttribute) || parseBool(props.EnableEmailOtpMfa)) {
+  if (
+    hasValue(loginMechanisms, "email") ||
+    parseBool(props.RequireEmailAttribute) ||
+    parseBool(props.EnableEmailOtpMfa)
+  ) {
     values.push("email");
   }
-  if (hasValue(loginMechanisms, "phone_number") || parseBool(props.RequirePhoneNumberAttribute) || parseBool(props.EnableSmsMfa)) {
+  if (
+    hasValue(loginMechanisms, "phone_number") ||
+    parseBool(props.RequirePhoneNumberAttribute) ||
+    parseBool(props.EnableSmsMfa)
+  ) {
     values.push("phone_number");
   }
   return values;
 }
 
-function resolveRecoveryMechanisms(props: Record<string, string>, autoVerifiedAttributes: string[]) {
+function resolveRecoveryMechanisms(
+  props: Record<string, string>,
+  autoVerifiedAttributes: string[],
+) {
   const recovery = [] as Array<{ Name: string; Priority: number }>;
-  if (autoVerifiedAttributes.includes("email")) recovery.push({ Name: "verified_email", Priority: 1 });
-  if (autoVerifiedAttributes.includes("phone_number")) recovery.push({ Name: "verified_phone_number", Priority: recovery.length + 1 });
+  if (autoVerifiedAttributes.includes("email"))
+    recovery.push({ Name: "verified_email", Priority: 1 });
+  if (autoVerifiedAttributes.includes("phone_number"))
+    recovery.push({
+      Name: "verified_phone_number",
+      Priority: recovery.length + 1,
+    });
   return recovery;
 }
 
@@ -316,7 +415,10 @@ function resolveEnabledMfas(props: Record<string, string>): string[] {
   const mode = props.MfaMode || "no";
   if (mode === "no") return [];
   const values: string[] = [];
-  if (parseBool(props.EnableSoftwareTokenMfa) || (!parseBool(props.EnableSmsMfa) && !parseBool(props.EnableEmailOtpMfa))) {
+  if (
+    parseBool(props.EnableSoftwareTokenMfa) ||
+    (!parseBool(props.EnableSmsMfa) && !parseBool(props.EnableEmailOtpMfa))
+  ) {
     values.push("SOFTWARE_TOKEN_MFA");
   }
   if (parseBool(props.EnableEmailOtpMfa)) values.push("EMAIL_OTP");
@@ -346,16 +448,30 @@ function resolveMfaConfiguration(mode?: string): "OFF" | "OPTIONAL" | "ON" {
   return "OFF";
 }
 
-async function updateUserPool(userPoolId: string, props: Record<string, string>, clear = false) {
-  const userPoolResp = await cognitoClient.send(new DescribeUserPoolCommand({ UserPoolId: userPoolId }));
+async function updateUserPool(
+  userPoolId: string,
+  props: Record<string, string>,
+  clear = false,
+) {
+  const userPoolResp = await cognitoClient.send(
+    new DescribeUserPoolCommand({ UserPoolId: userPoolId }),
+  );
   const userPool = userPoolResp.UserPool;
   if (!userPool) throw new Error(`User pool not found: ${userPoolId}`);
 
   const lambdaConfig: LambdaConfigType = { ...(userPool.LambdaConfig || {}) };
 
   setOrUnset(lambdaConfig, "PreSignUp", clear ? undefined : props.PreSignUpArn);
-  setOrUnset(lambdaConfig, "PostConfirmation", clear ? undefined : props.PostConfirmationArn);
-  setOrUnset(lambdaConfig, "PreTokenGeneration", clear ? undefined : props.PreTokenGenerationArn);
+  setOrUnset(
+    lambdaConfig,
+    "PostConfirmation",
+    clear ? undefined : props.PostConfirmationArn,
+  );
+  setOrUnset(
+    lambdaConfig,
+    "PreTokenGeneration",
+    clear ? undefined : props.PreTokenGenerationArn,
+  );
 
   if (!clear && props.CustomEmailSenderArn) {
     lambdaConfig.CustomEmailSender = {
@@ -373,21 +489,35 @@ async function updateUserPool(userPoolId: string, props: Record<string, string>,
     ? userPool.AutoVerifiedAttributes
     : resolveAutoVerifiedAttributes(props);
   const verificationAttributes = clear
-    ? userPool.UserAttributeUpdateSettings?.AttributesRequireVerificationBeforeUpdate
+    ? userPool.UserAttributeUpdateSettings
+        ?.AttributesRequireVerificationBeforeUpdate
     : resolveVerificationAttributes(props);
   const enabledMfas = clear ? userPool.EnabledMfas : resolveEnabledMfas(props);
-  const emailIdentity = !clear ? (props.ResolvedSesIdentity || props.SesIdentity || undefined) : undefined;
-  const defaultFromAddress = props.EmailFromAddress || ((props.ResolvedSesIdentity || props.SesIdentity || "").includes("@") ? (props.ResolvedSesIdentity || props.SesIdentity) : ((props.ResolvedSesIdentity || props.SesIdentity) ? `no-reply@${props.ResolvedSesIdentity || props.SesIdentity}` : undefined));
+  const emailIdentity = !clear
+    ? props.ResolvedSesIdentity || props.SesIdentity || undefined
+    : undefined;
+  const defaultFromAddress =
+    props.EmailFromAddress ||
+    ((props.ResolvedSesIdentity || props.SesIdentity || "").includes("@")
+      ? props.ResolvedSesIdentity || props.SesIdentity
+      : props.ResolvedSesIdentity || props.SesIdentity
+        ? `no-reply@${props.ResolvedSesIdentity || props.SesIdentity}`
+        : undefined);
   const fromAddress = !clear ? defaultFromAddress : undefined;
-  const recoveryMechanisms = clear ? userPool.AccountRecoverySetting?.RecoveryMechanisms : resolveRecoveryMechanisms(props, autoVerifiedAttributes || []);
+  const recoveryMechanisms = clear
+    ? userPool.AccountRecoverySetting?.RecoveryMechanisms
+    : resolveRecoveryMechanisms(props, autoVerifiedAttributes || []);
 
-  const smsConfiguration = !clear && parseBool(props.EnableSmsMfa) && props.SmsConfigurationSnsCallerArn
-    ? pruneUndefined({
-        SnsCallerArn: props.SmsConfigurationSnsCallerArn,
-        ExternalId: props.SmsConfigurationExternalId || undefined,
-        SnsRegion: props.SmsConfigurationSnsRegion || undefined,
-      })
-    : userPool.SmsConfiguration;
+  const smsConfiguration =
+    !clear &&
+    parseBool(props.EnableSmsMfa) &&
+    props.SmsConfigurationSnsCallerArn
+      ? pruneUndefined({
+          SnsCallerArn: props.SmsConfigurationSnsCallerArn,
+          ExternalId: props.SmsConfigurationExternalId || undefined,
+          SnsRegion: props.SmsConfigurationSnsRegion || undefined,
+        })
+      : userPool.SmsConfiguration;
 
   await cognitoClient.send(
     new UpdateUserPoolCommand(
@@ -399,13 +529,22 @@ async function updateUserPool(userPoolId: string, props: Record<string, string>,
         AliasAttributes: userPool.AliasAttributes,
         AdminCreateUserConfig: userPool.AdminCreateUserConfig,
         Schema: userPool.SchemaAttributes,
-        MfaConfiguration: clear ? userPool.MfaConfiguration : resolveMfaConfiguration(props.MfaMode),
-        EnabledMfas: enabledMfas && enabledMfas.length ? enabledMfas : undefined,
+        MfaConfiguration: clear
+          ? userPool.MfaConfiguration
+          : resolveMfaConfiguration(props.MfaMode),
+        EnabledMfas:
+          enabledMfas && enabledMfas.length ? enabledMfas : undefined,
         VerificationMessageTemplate: userPool.VerificationMessageTemplate,
-        UserAttributeUpdateSettings: verificationAttributes && verificationAttributes.length
-          ? { AttributesRequireVerificationBeforeUpdate: verificationAttributes }
-          : undefined,
-        DeviceConfiguration: clear ? userPool.DeviceConfiguration : resolveDeviceConfiguration(props),
+        UserAttributeUpdateSettings:
+          verificationAttributes && verificationAttributes.length
+            ? {
+                AttributesRequireVerificationBeforeUpdate:
+                  verificationAttributes,
+              }
+            : undefined,
+        DeviceConfiguration: clear
+          ? userPool.DeviceConfiguration
+          : resolveDeviceConfiguration(props),
         EmailConfiguration: emailIdentity
           ? pruneUndefined({
               EmailSendingAccount: "DEVELOPER",
@@ -415,7 +554,10 @@ async function updateUserPool(userPoolId: string, props: Record<string, string>,
           : userPool.EmailConfiguration,
         SmsConfiguration: smsConfiguration,
         UserPoolAddOns: userPool.UserPoolAddOns,
-        AccountRecoverySetting: recoveryMechanisms && recoveryMechanisms.length ? { RecoveryMechanisms: recoveryMechanisms } : undefined,
+        AccountRecoverySetting:
+          recoveryMechanisms && recoveryMechanisms.length
+            ? { RecoveryMechanisms: recoveryMechanisms }
+            : undefined,
         PoolName: userPool.Name,
         DeletionProtection: userPool.DeletionProtection,
         LambdaConfig: lambdaConfig,
@@ -424,7 +566,10 @@ async function updateUserPool(userPoolId: string, props: Record<string, string>,
   );
 }
 
-async function handleTriggerAttachment(event: Event, props: Record<string, string>) {
+async function handleTriggerAttachment(
+  event: Event,
+  props: Record<string, string>,
+) {
   const userPoolId = props.UserPoolId;
   if (event.RequestType === "Delete") {
     await updateUserPool(userPoolId, props, true);
@@ -435,7 +580,10 @@ async function handleTriggerAttachment(event: Event, props: Record<string, strin
   return { AttachedUserPoolId: userPoolId };
 }
 
-async function handleApplyUserPoolSettings(event: Event, props: Record<string, string>) {
+async function handleApplyUserPoolSettings(
+  event: Event,
+  props: Record<string, string>,
+) {
   const userPoolId = props.UserPoolId;
   if (event.RequestType === "Delete") {
     return { UserPoolId: userPoolId };
@@ -448,7 +596,10 @@ async function handleApplyUserPoolSettings(event: Event, props: Record<string, s
   };
 }
 
-function toDkimRecords(identity: string, tokens: string[] | undefined): Array<{ name: string; value: string }> {
+function toDkimRecords(
+  identity: string,
+  tokens: string[] | undefined,
+): Array<{ name: string; value: string }> {
   return (tokens || []).filter(Boolean).map((token) => ({
     name: `${token}._domainkey.${identity}`,
     value: `${token}.dkim.amazonses.com`,
@@ -457,23 +608,42 @@ function toDkimRecords(identity: string, tokens: string[] | undefined): Array<{ 
 
 async function ensureEmailIdentity(identity: string) {
   try {
-    return await sesClient.send(new GetEmailIdentityCommand({ EmailIdentity: identity }));
+    return await sesClient.send(
+      new GetEmailIdentityCommand({ EmailIdentity: identity }),
+    );
   } catch {
-    await sesClient.send(new CreateEmailIdentityCommand({ EmailIdentity: identity }));
-    return await sesClient.send(new GetEmailIdentityCommand({ EmailIdentity: identity }));
+    await sesClient.send(
+      new CreateEmailIdentityCommand({ EmailIdentity: identity }),
+    );
+    return await sesClient.send(
+      new GetEmailIdentityCommand({ EmailIdentity: identity }),
+    );
   }
 }
 
-async function handleEnsureSesIdentity(event: Event, props: Record<string, string>) {
+async function handleEnsureSesIdentity(
+  event: Event,
+  props: Record<string, string>,
+) {
   const identity = props.Identity;
   if (!identity) throw new Error("Identity is required for EnsureSesIdentity");
 
-  const hostedZoneId = props.HostedZoneId || (parseBool(props.AutoDetectHostedZone) ? await findHostedZoneId(identity) : undefined);
+  const hostedZoneId =
+    props.HostedZoneId ||
+    (parseBool(props.AutoDetectHostedZone)
+      ? await findHostedZoneId(identity)
+      : undefined);
 
   if (event.RequestType === "Delete") {
     try {
-      const existing = await sesClient.send(new GetEmailIdentityCommand({ EmailIdentity: identity }));
-      const records = toDkimRecords(identity, (existing as any)?.DkimAttributes?.Tokens || (existing as any)?.DkimAttributes?.tokens);
+      const existing = await sesClient.send(
+        new GetEmailIdentityCommand({ EmailIdentity: identity }),
+      );
+      const records = toDkimRecords(
+        identity,
+        (existing as any)?.DkimAttributes?.Tokens ||
+          (existing as any)?.DkimAttributes?.tokens,
+      );
       if (hostedZoneId && records.length) {
         try {
           await deleteCnameRecords(hostedZoneId, records);
@@ -482,7 +652,9 @@ async function handleEnsureSesIdentity(event: Event, props: Record<string, strin
         }
       }
       if (parseBool(props.DeleteIdentityOnStackDelete)) {
-        await sesClient.send(new DeleteEmailIdentityCommand({ EmailIdentity: identity }));
+        await sesClient.send(
+          new DeleteEmailIdentityCommand({ EmailIdentity: identity }),
+        );
       }
     } catch {
       // nothing to clean up
@@ -491,7 +663,9 @@ async function handleEnsureSesIdentity(event: Event, props: Record<string, strin
   }
 
   const resp = await ensureEmailIdentity(identity);
-  const tokens = ((resp as any)?.DkimAttributes?.Tokens || (resp as any)?.DkimAttributes?.tokens || []) as string[];
+  const tokens = ((resp as any)?.DkimAttributes?.Tokens ||
+    (resp as any)?.DkimAttributes?.tokens ||
+    []) as string[];
   const records = toDkimRecords(identity, tokens);
   if (hostedZoneId && records.length) {
     await upsertCnameRecords(hostedZoneId, records);
@@ -505,12 +679,16 @@ async function handleEnsureSesIdentity(event: Event, props: Record<string, strin
 }
 
 export const handler = async (event: Event): Promise<void> => {
-  const physicalId = event.PhysicalResourceId || `${event.LogicalResourceId}-${Date.now()}`;
+  const physicalId =
+    event.PhysicalResourceId || `${event.LogicalResourceId}-${Date.now()}`;
   try {
     const type = event.ResourceProperties.Action;
     let data: Record<string, unknown> = {};
 
     switch (type) {
+      case "SSMParameter":
+        data = await handleSSMParameter(event, event.ResourceProperties);
+        break;
       case "HostedZoneLookup":
         data = await handleHostedZoneLookup(event.ResourceProperties);
         break;
@@ -518,7 +696,8 @@ export const handler = async (event: Event): Promise<void> => {
         data = await handleRoute53Alias(event, event.ResourceProperties);
         break;
       case "BucketCleaner":
-        if (event.RequestType === "Delete") data = await handleBucketCleaner(event.ResourceProperties);
+        if (event.RequestType === "Delete")
+          data = await handleBucketCleaner(event.ResourceProperties);
         break;
       case "S3TemplateUpload":
         data = await handleS3TemplateUpload(event, event.ResourceProperties);
@@ -527,7 +706,10 @@ export const handler = async (event: Event): Promise<void> => {
         data = await handleTriggerAttachment(event, event.ResourceProperties);
         break;
       case "ApplyUserPoolSettings":
-        data = await handleApplyUserPoolSettings(event, event.ResourceProperties);
+        data = await handleApplyUserPoolSettings(
+          event,
+          event.ResourceProperties,
+        );
         break;
       case "EnsureSesIdentity":
         data = await handleEnsureSesIdentity(event, event.ResourceProperties);

@@ -1,0 +1,684 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "WP Suite Cognito Infrastructure - CloudFormation wrapper for the published nested backend stack"
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Deployment Basics"
+        Parameters:
+          - AppName
+          - LogRetentionDays
+
+      - Label:
+          default: "User Pool Configuration"
+        Parameters:
+          - CreateUserPool
+          - ExistingUserPoolId
+          - UserPoolName
+          - LoginMechanisms
+          - PostLoginRedirectUrl
+          - OAuthScopes
+
+      - Label:
+          default: "Required Attributes"
+        Parameters:
+          - RequireEmailAttribute
+          - RequireGivenNameAttribute
+          - RequireFamilyNameAttribute
+          - RequirePhoneNumberAttribute
+
+      - Label:
+          default: "Identity Pool"
+        Parameters:
+          - CreateIdentityPool
+          - IdentityPoolName
+          - AllowUnauthenticatedIdentities
+
+      - Label:
+          default: "Custom Domain"
+        Parameters:
+          - CreateCustomDomain
+          - UserPoolCustomDomainSubdomain
+          - UserPoolCustomDomainCertArn
+          - RegisterRoute53Alias
+
+      - Label:
+          default: "Lambda Triggers"
+        Parameters:
+          - EnableCustomEmailSender
+          - EnablePreSignUp
+          - EnablePreTokenGeneration
+          - EnablePostConfirmation
+
+      - Label:
+          default: "Email Configuration"
+        Parameters:
+          - EmailTemplateBucketName
+          - SesIdentity
+          - AutoCreateSesIdentity
+          - DeleteSesIdentityOnStackDelete
+          - EmailFromAddress
+          - CallbackBaseUrl
+          - KmsKeyId
+
+      - Label:
+          default: "Email Subject Templates"
+        Parameters:
+          - SubjectTemplateSignUp
+          - SubjectTemplateResendCode
+          - SubjectTemplateForgotPassword
+          - SubjectTemplateAdminCreate
+          - SubjectTemplateVerifyAttribute
+          - SubjectTemplateAuthentication
+          - SubjectTemplateAccountTakeover
+
+      - Label:
+          default: "reCAPTCHA Protection"
+        Parameters:
+          - EnableRecaptcha
+          - RecaptchaMode
+          - RecaptchaSecretKey
+          - RecaptchaProjectId
+          - RecaptchaSiteKey
+          - RecaptchaScoreThreshold
+
+      - Label:
+          default: "Multi-Factor Authentication"
+        Parameters:
+          - MfaMode
+          - EnableSoftwareTokenMfa
+          - EnableEmailOtpMfa
+          - EnableSmsMfa
+          - SmsConfigurationSnsCallerArn
+          - SmsConfigurationExternalId
+          - SmsConfigurationSnsRegion
+
+      - Label:
+          default: "Device & Attribute Verification"
+        Parameters:
+          - DeviceTrackingMode
+          - VerifyAttributeChanges
+          - VerifyAttributeChangesMode
+
+      - Label:
+          default: "User Groups"
+        Parameters:
+          - RegisteredGroupName
+          - AdminGroupName
+
+    ParameterLabels:
+      # Deployment Basics
+      AppName:
+        default: "Application Name"
+      LogRetentionDays:
+        default: "Log Retention Days"
+
+      # User Pool
+      CreateUserPool:
+        default: "Create New User Pool"
+      ExistingUserPoolId:
+        default: "Existing User Pool ID"
+      UserPoolName:
+        default: "User Pool Name"
+      LoginMechanisms:
+        default: "Login Mechanisms"
+      PostLoginRedirectUrl:
+        default: "OAuth Callback URL"
+      OAuthScopes:
+        default: "OAuth Scopes"
+
+      # Required Attributes
+      RequireEmailAttribute:
+        default: "Require Email"
+      RequireGivenNameAttribute:
+        default: "Require Given Name"
+      RequireFamilyNameAttribute:
+        default: "Require Family Name"
+      RequirePhoneNumberAttribute:
+        default: "Require Phone Number"
+
+      # Identity Pool
+      CreateIdentityPool:
+        default: "Create Identity Pool"
+      IdentityPoolName:
+        default: "Identity Pool Name"
+      AllowUnauthenticatedIdentities:
+        default: "Allow Unauthenticated"
+
+      # Custom Domain
+      CreateCustomDomain:
+        default: "Create Custom Domain"
+      UserPoolCustomDomainSubdomain:
+        default: "Custom Domain"
+      UserPoolCustomDomainCertArn:
+        default: "ACM Certificate ARN"
+      RegisterRoute53Alias:
+        default: "Register Route 53 Alias"
+
+      # Lambda Triggers
+      EnableCustomEmailSender:
+        default: "Enable Custom Email Sender"
+      EnablePreSignUp:
+        default: "Enable Pre Sign-Up"
+      EnablePreTokenGeneration:
+        default: "Enable Pre Token Generation"
+      EnablePostConfirmation:
+        default: "Enable Post Confirmation"
+
+      # Email Configuration
+      EmailTemplateBucketName:
+        default: "Email Template Bucket"
+      SesIdentity:
+        default: "SES Identity"
+      AutoCreateSesIdentity:
+        default: "Auto-create SES Identity"
+      DeleteSesIdentityOnStackDelete:
+        default: "Delete SES Identity on Stack Delete"
+      EmailFromAddress:
+        default: "From Email Address"
+      CallbackBaseUrl:
+        default: "Callback Base URL"
+      KmsKeyId:
+        default: "KMS Key ID"
+
+      # Email Subjects
+      SubjectTemplateSignUp:
+        default: "Sign-Up Subject"
+      SubjectTemplateResendCode:
+        default: "Resend Code Subject"
+      SubjectTemplateForgotPassword:
+        default: "Forgot Password Subject"
+      SubjectTemplateAdminCreate:
+        default: "Admin Create Subject"
+      SubjectTemplateVerifyAttribute:
+        default: "Verify Attribute Subject"
+      SubjectTemplateAuthentication:
+        default: "Authentication Subject"
+      SubjectTemplateAccountTakeover:
+        default: "Account Takeover Subject"
+
+      # reCAPTCHA
+      EnableRecaptcha:
+        default: "Enable reCAPTCHA"
+      RecaptchaMode:
+        default: "reCAPTCHA Mode"
+      RecaptchaSecretKey:
+        default: "reCAPTCHA Secret Key"
+      RecaptchaProjectId:
+        default: "reCAPTCHA Project ID"
+      RecaptchaSiteKey:
+        default: "reCAPTCHA Site Key"
+      RecaptchaScoreThreshold:
+        default: "reCAPTCHA Score Threshold"
+
+      # User Groups
+      RegisteredGroupName:
+        default: "Registered Group Name"
+      AdminGroupName:
+        default: "Admin Group Name"
+
+      # MFA
+      MfaMode:
+        default: "MFA Mode"
+      EnableSoftwareTokenMfa:
+        default: "Enable Authenticator App MFA"
+      EnableEmailOtpMfa:
+        default: "Enable Email OTP MFA"
+      EnableSmsMfa:
+        default: "Enable SMS MFA"
+      SmsConfigurationSnsCallerArn:
+        default: "SNS Caller Role ARN"
+      SmsConfigurationExternalId:
+        default: "SNS External ID"
+      SmsConfigurationSnsRegion:
+        default: "SNS Region"
+
+      # Device & Verification
+      DeviceTrackingMode:
+        default: "Device Tracking Mode"
+      VerifyAttributeChanges:
+        default: "Verify Attribute Changes"
+      VerifyAttributeChangesMode:
+        default: "Verification Mode"
+
+Parameters:
+  DeploymentVersion:
+    Type: String
+    Default: 1.0.0
+    Description: "Application version used to locate the published nested backend template in S3"
+
+  ArtifactBucketName:
+    Type: String
+    Default: wpsuite-artifacts
+    Description: "S3 bucket that stores the published deployment artifacts for this application"
+
+  ArtifactKeyPrefix:
+    Type: String
+    Default: wpsuite-cognito
+    Description: "S3 key prefix under the artifact bucket for this Cognito application"
+
+  # ---- pass-through parameters for the backend app ----
+
+  AppName:
+    Type: String
+    Default: "wpsuite-cognito"
+    AllowedPattern: ^[a-zA-Z0-9-]+$
+    Description: "Short application name used as prefix for AWS resource names"
+
+  LogRetentionDays:
+    Type: Number
+    Default: 14
+    MinValue: 1
+    MaxValue: 3653
+    Description: "Number of days to retain CloudWatch logs for Lambda functions"
+
+  # User Pool Configuration
+  CreateUserPool:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Create a new Cognito user pool"
+
+  ExistingUserPoolId:
+    Type: String
+    Default: ""
+    Description: "Existing Cognito user pool ID (when CreateUserPool is false)"
+
+  UserPoolName:
+    Type: String
+    Default: ""
+    Description: "Optional custom user pool name"
+
+  LoginMechanisms:
+    Type: CommaDelimitedList
+    Default: email
+    Description: "Sign-in attributes (email, username, phone_number)"
+
+  PostLoginRedirectUrl:
+    Type: String
+    Default: https://example.com/signin
+    Description: "OAuth callback URL"
+
+  OAuthScopes:
+    Type: CommaDelimitedList
+    Default: aws.cognito.signin.user.admin,email,openid,profile
+    Description: "OAuth scopes for the app client"
+
+  # Required Attributes
+  RequireEmailAttribute:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: "Mark email as required"
+
+  RequireGivenNameAttribute:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: "Mark given_name as required"
+
+  RequireFamilyNameAttribute:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: "Mark family_name as required"
+
+  RequirePhoneNumberAttribute:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: "Mark phone_number as required"
+
+  # Identity Pool
+  CreateIdentityPool:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Create a Cognito identity pool"
+
+  IdentityPoolName:
+    Type: String
+    Default: ""
+    Description: "Optional custom identity pool name"
+
+  AllowUnauthenticatedIdentities:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: "Allow unauthenticated identities"
+
+  # Custom Domain
+  CreateCustomDomain:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: "Create a custom domain for the user pool"
+
+  UserPoolCustomDomainSubdomain:
+    Type: String
+    Default: ""
+    Description: "Custom domain name (e.g., auth.example.com)"
+
+  UserPoolCustomDomainCertArn:
+    Type: String
+    Default: ""
+    Description: "ACM certificate ARN (must be in us-east-1)"
+
+  RegisterRoute53Alias:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: "Create Route 53 alias record"
+
+  # Lambda Triggers
+  EnableCustomEmailSender:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Enable custom email sender Lambda"
+
+  EnablePreSignUp:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Enable pre sign-up Lambda trigger"
+
+  EnablePreTokenGeneration:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: "Enable pre token generation Lambda trigger"
+
+  EnablePostConfirmation:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Enable post confirmation Lambda trigger"
+
+  # Email Configuration
+  EmailTemplateBucketName:
+    Type: String
+    Default: ""
+    Description: "Existing S3 bucket for email templates (leave empty to create new)"
+
+  SesIdentity:
+    Type: String
+    Default: ""
+    Description: "SES verified identity (domain or email)"
+
+  AutoCreateSesIdentity:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Automatically create and verify SES identity"
+
+  DeleteSesIdentityOnStackDelete:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: "Delete SES identity when the stack is deleted"
+
+  EmailFromAddress:
+    Type: String
+    Default: ""
+    Description: "Optional From address for emails"
+
+  CallbackBaseUrl:
+    Type: String
+    Default: ""
+    Description: "Optional base URL for email template links"
+
+  KmsKeyId:
+    Type: String
+    Default: ""
+    Description: "KMS key ID or ARN for custom email sender"
+
+  # Email Subject Templates
+  SubjectTemplateSignUp:
+    Type: String
+    Default: "Confirm your account"
+    Description: "Sign-up confirmation email subject"
+
+  SubjectTemplateResendCode:
+    Type: String
+    Default: "Your confirmation code"
+    Description: "Resend code email subject"
+
+  SubjectTemplateForgotPassword:
+    Type: String
+    Default: "Reset your password"
+    Description: "Forgot password email subject"
+
+  SubjectTemplateAdminCreate:
+    Type: String
+    Default: "Your account has been created"
+    Description: "Admin create user email subject"
+
+  SubjectTemplateVerifyAttribute:
+    Type: String
+    Default: "Verify your information"
+    Description: "Verify attribute email subject"
+
+  SubjectTemplateAuthentication:
+    Type: String
+    Default: "Your authentication code"
+    Description: "Authentication code email subject"
+
+  SubjectTemplateAccountTakeover:
+    Type: String
+    Default: "Security alert"
+    Description: "Account takeover alert email subject"
+
+  # reCAPTCHA Protection
+  EnableRecaptcha:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: "Enable reCAPTCHA verification"
+
+  RecaptchaMode:
+    Type: String
+    Default: "enterprise"
+    AllowedValues: [enterprise, classic]
+    Description: "reCAPTCHA mode"
+
+  RecaptchaSecretKey:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: "reCAPTCHA secret key"
+
+  RecaptchaProjectId:
+    Type: String
+    Default: ""
+    Description: "Google Cloud project ID for reCAPTCHA Enterprise"
+
+  RecaptchaSiteKey:
+    Type: String
+    Default: ""
+    Description: "reCAPTCHA site key"
+
+  RecaptchaScoreThreshold:
+    Type: Number
+    Default: 0.5
+    MinValue: 0
+    MaxValue: 1
+    Description: "Minimum reCAPTCHA score"
+
+  # User Groups
+  RegisteredGroupName:
+    Type: String
+    Default: "registered"
+    Description: "Default group name for confirmed users"
+
+  AdminGroupName:
+    Type: String
+    Default: "admin"
+    Description: "Admin group name"
+
+  # MFA Configuration
+  MfaMode:
+    Type: String
+    Default: "no"
+    AllowedValues: ["no", "optional", "required"]
+    Description: "Multi-factor authentication mode"
+
+  EnableSoftwareTokenMfa:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Enable authenticator app MFA"
+
+  EnableEmailOtpMfa:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: "Enable email OTP MFA"
+
+  EnableSmsMfa:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: "Enable SMS MFA"
+
+  SmsConfigurationSnsCallerArn:
+    Type: String
+    Default: ""
+    Description: "IAM role ARN for Cognito to send SMS"
+
+  SmsConfigurationExternalId:
+    Type: String
+    Default: ""
+    Description: "External ID for SNS role"
+
+  SmsConfigurationSnsRegion:
+    Type: String
+    Default: ""
+    Description: "AWS region for SNS"
+
+  # Device & Attribute Verification
+  DeviceTrackingMode:
+    Type: String
+    Default: "none"
+    AllowedValues: ["none", "user_opt_in", "always"]
+    Description: "Device remembering mode (only effective when MFA is enabled)"
+
+  VerifyAttributeChanges:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: "Keep original email/phone values active while new value is pending verification"
+
+  VerifyAttributeChangesMode:
+    Type: String
+    Default: "auto"
+    AllowedValues: ["auto", "email", "phone_number", "email_and_phone"]
+    Description: "Which attributes must be verified before update"
+
+Resources:
+  GateyCognito:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${ArtifactBucketName}.s3.${AWS::Region}.amazonaws.com/${ArtifactKeyPrefix}/${DeploymentVersion}/template.yaml
+      Parameters:
+        AppName: !Ref AppName
+        LogRetentionDays: !Ref LogRetentionDays
+
+        # User Pool Configuration
+        CreateUserPool: !Ref CreateUserPool
+        ExistingUserPoolId: !Ref ExistingUserPoolId
+        UserPoolName: !Ref UserPoolName
+        LoginMechanisms: !Join [",", !Ref LoginMechanisms]
+        PostLoginRedirectUrl: !Ref PostLoginRedirectUrl
+        OAuthScopes: !Join [",", !Ref OAuthScopes]
+
+        # Required Attributes
+        RequireEmailAttribute: !Ref RequireEmailAttribute
+        RequireGivenNameAttribute: !Ref RequireGivenNameAttribute
+        RequireFamilyNameAttribute: !Ref RequireFamilyNameAttribute
+        RequirePhoneNumberAttribute: !Ref RequirePhoneNumberAttribute
+
+        # Identity Pool
+        CreateIdentityPool: !Ref CreateIdentityPool
+        IdentityPoolName: !Ref IdentityPoolName
+        AllowUnauthenticatedIdentities: !Ref AllowUnauthenticatedIdentities
+
+        # Custom Domain
+        CreateCustomDomain: !Ref CreateCustomDomain
+        UserPoolCustomDomainSubdomain: !Ref UserPoolCustomDomainSubdomain
+        UserPoolCustomDomainCertArn: !Ref UserPoolCustomDomainCertArn
+        RegisterRoute53Alias: !Ref RegisterRoute53Alias
+
+        # Lambda Triggers
+        EnableCustomEmailSender: !Ref EnableCustomEmailSender
+        EnablePreSignUp: !Ref EnablePreSignUp
+        EnablePreTokenGeneration: !Ref EnablePreTokenGeneration
+        EnablePostConfirmation: !Ref EnablePostConfirmation
+
+        # Email Configuration
+        EmailTemplateBucketName: !Ref EmailTemplateBucketName
+        SesIdentity: !Ref SesIdentity
+        AutoCreateSesIdentity: !Ref AutoCreateSesIdentity
+        DeleteSesIdentityOnStackDelete: !Ref DeleteSesIdentityOnStackDelete
+        EmailFromAddress: !Ref EmailFromAddress
+        CallbackBaseUrl: !Ref CallbackBaseUrl
+        KmsKeyId: !Ref KmsKeyId
+
+        # Email Subject Templates
+        SubjectTemplateSignUp: !Ref SubjectTemplateSignUp
+        SubjectTemplateResendCode: !Ref SubjectTemplateResendCode
+        SubjectTemplateForgotPassword: !Ref SubjectTemplateForgotPassword
+        SubjectTemplateAdminCreate: !Ref SubjectTemplateAdminCreate
+        SubjectTemplateVerifyAttribute: !Ref SubjectTemplateVerifyAttribute
+        SubjectTemplateAuthentication: !Ref SubjectTemplateAuthentication
+        SubjectTemplateAccountTakeover: !Ref SubjectTemplateAccountTakeover
+
+        # reCAPTCHA Protection
+        EnableRecaptcha: !Ref EnableRecaptcha
+        RecaptchaMode: !Ref RecaptchaMode
+        RecaptchaSecretKey: !Ref RecaptchaSecretKey
+        RecaptchaProjectId: !Ref RecaptchaProjectId
+        RecaptchaSiteKey: !Ref RecaptchaSiteKey
+        RecaptchaScoreThreshold: !Ref RecaptchaScoreThreshold
+
+        # User Groups
+        RegisteredGroupName: !Ref RegisteredGroupName
+        AdminGroupName: !Ref AdminGroupName
+
+        # MFA Configuration
+        MfaMode: !Ref MfaMode
+        EnableSoftwareTokenMfa: !Ref EnableSoftwareTokenMfa
+        EnableEmailOtpMfa: !Ref EnableEmailOtpMfa
+        EnableSmsMfa: !Ref EnableSmsMfa
+        SmsConfigurationSnsCallerArn: !Ref SmsConfigurationSnsCallerArn
+        SmsConfigurationExternalId: !Ref SmsConfigurationExternalId
+        SmsConfigurationSnsRegion: !Ref SmsConfigurationSnsRegion
+
+        # Device & Attribute Verification
+        DeviceTrackingMode: !Ref DeviceTrackingMode
+        VerifyAttributeChanges: !Ref VerifyAttributeChanges
+        VerifyAttributeChangesMode: !Ref VerifyAttributeChangesMode
+
+Outputs:
+  UserPoolId:
+    Description: "Cognito User Pool ID"
+    Value: !GetAtt GateyCognito.Outputs.UserPoolId
+
+  UserPoolArn:
+    Description: "Cognito User Pool ARN"
+    Value: !GetAtt GateyCognito.Outputs.UserPoolArn
+
+  UserPoolClientId:
+    Description: "User Pool Client ID"
+    Value: !GetAtt GateyCognito.Outputs.UserPoolClientId
+    Condition: CreateUserPoolCondition
+
+  IdentityPoolId:
+    Description: "Cognito Identity Pool ID"
+    Value: !GetAtt GateyCognito.Outputs.IdentityPoolId
+    Condition: CreateIdentityPoolCondition
+
+Conditions:
+  CreateUserPoolCondition: !Equals [!Ref CreateUserPool, "true"]
+  CreateIdentityPoolCondition: !Equals [!Ref CreateIdentityPool, "true"]

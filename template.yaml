@@ -50,6 +50,30 @@ Parameters:
     Default: wpsuite-cognito
     AllowedPattern: ^[a-zA-Z0-9-]+$
     Description: Short application name used as the prefix for generated AWS resource names.
+  LogRetentionDays:
+    Type: Number
+    Default: 14
+    AllowedValues:
+      [
+        1,
+        3,
+        5,
+        7,
+        14,
+        30,
+        60,
+        90,
+        120,
+        150,
+        180,
+        365,
+        400,
+        545,
+        731,
+        1827,
+        3653,
+      ]
+    Description: Number of days to retain CloudWatch logs for Lambda functions.
   CreateUserPool:
     Type: String
     Default: "true"
@@ -140,7 +164,9 @@ Parameters:
   EmailTemplateBucketName:
     Type: String
     Default: ""
+    AllowedPattern: ^$|^[a-z0-9.-]{3,63}$
     Description: Existing S3 bucket for HTML email templates. Leave empty to create a dedicated bucket.
+    ConstraintDescription: Must be empty or a valid S3 bucket name.
   SesIdentity:
     Type: String
     Default: ""
@@ -390,13 +416,13 @@ Resources:
       TargetKeyId: !Ref CustomSenderKmsKey
 
   RecaptchaSecretParameter:
-    Type: AWS::SSM::Parameter
+    Type: Custom::SSMParameter
     Condition: CondEnableRecaptchaWithSecret
     Properties:
+      ServiceToken: !GetAtt CustomResourceFunction.Arn
+      Action: SSMParameter
       Name: !Sub /${AppName}/recaptcha/secret
-      Type: SecureString
       Value: !Ref RecaptchaSecretKey
-      Tier: Standard
 
   CognitoCommonLayer:
     Type: AWS::Serverless::LayerVersion
@@ -654,6 +680,12 @@ Resources:
       BucketName: !Ref EmailTemplateBucket
       Prefix: email-templates/
 
+  CustomResourceFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AppName}-custom-resource
+      RetentionInDays: !Ref LogRetentionDays
+
   CustomResourceFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -667,19 +699,19 @@ Resources:
         - Statement:
             - Effect: Allow
               Action:
+                - ssm:PutParameter
+                - ssm:GetParameter
+                - ssm:DeleteParameter
+              Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AppName}/recaptcha/secret
+            - Effect: Allow
+              Action:
                 - route53:ListHostedZonesByName
                 - route53:ChangeResourceRecordSets
               Resource: "*"
             - Effect: Allow
               Action:
                 - s3:ListBucket
-              Resource:
-                - !If [
-                    CondCreateEmailTemplateBucket,
-                    !GetAtt EmailTemplateBucket.Arn,
-                    !Sub "arn:${AWS::Partition}:s3:::${EmailTemplateBucketName}",
-                  ]
-                - !Sub "arn:${AWS::Partition}:s3:::${ArtifactBucketName}"
+              Resource: "*"
             - Effect: Allow
               Action:
                 - s3:GetObject
@@ -704,6 +736,13 @@ Resources:
                 - ses:CreateEmailIdentity
                 - ses:DeleteEmailIdentity
               Resource: "*"
+
+  PreSignUpFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: CondEnablePreSignUp
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AppName}-pre-signup
+      RetentionInDays: !Ref LogRetentionDays
 
   TemplateUpload:
     Type: Custom::S3TemplateUpload
@@ -845,6 +884,13 @@ Resources:
                 - ssm:GetParameter
               Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AppName}/recaptcha/secret
 
+  PreTokenGenerationFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: CondEnablePreTokenGeneration
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AppName}-pre-token-generation
+      RetentionInDays: !Ref LogRetentionDays
+
   PreTokenGenerationFunction:
     Type: AWS::Serverless::Function
     Condition: CondEnablePreTokenGeneration
@@ -856,6 +902,13 @@ Resources:
       Handler: index.handler
       Policies:
         - AWSLambdaBasicExecutionRole
+
+  PostConfirmationFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: CondEnablePostConfirmation
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AppName}-post-confirmation
+      RetentionInDays: !Ref LogRetentionDays
 
   PostConfirmationFunction:
     Type: AWS::Serverless::Function
@@ -883,6 +936,13 @@ Resources:
                   !Sub "arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*",
                   !Sub "arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${ExistingUserPoolId}",
                 ]
+
+  CustomEmailSenderFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: CondEnableEmailSender
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AppName}-custom-email-sender
+      RetentionInDays: !Ref LogRetentionDays
 
   CustomEmailSenderFunction:
     Type: AWS::Serverless::Function
