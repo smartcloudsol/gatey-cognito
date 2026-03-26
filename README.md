@@ -53,6 +53,15 @@ During publishing:
 
 Because of this, the public repository should be understood as a **deployment-facing repository**, not as a full internal development workspace.
 
+## Email delivery model
+
+The deployment package supports two operational modes for Cognito email delivery:
+
+- **Cognito-managed email** for the simpler default path.
+- **SES-backed developer email** when HTML email templates, custom subject lines, or email OTP MFA are required.
+
+For SES-backed deployments, the safest approach is to provide a pre-created, already verified SES identity instead of relying on verification to complete during stack deployment.
+
 ## Repository contents intended for public review
 
 If you are evaluating this package, the most relevant files are:

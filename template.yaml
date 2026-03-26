@@ -133,14 +133,14 @@ Parameters:
     Description: Allow unauthenticated identities in the identity pool.
   EnableCustomEmailSender:
     Type: String
-    Default: "true"
+    Default: "false"
     AllowedValues: ["true", "false"]
-    Description: Enable the custom email sender Lambda and HTML email templates.
+    Description: Enable the custom email sender Lambda and HTML email templates. Leave disabled to use Cognito managed email delivery.
   AutoCreateSesIdentity:
     Type: String
-    Default: "true"
+    Default: "false"
     AllowedValues: ["true", "false"]
-    Description: Automatically ensure an SES identity exists for the configured sender domain or email identity.
+    Description: Automatically ensure an SES identity exists for the configured sender domain or email identity. This is only needed for SES-backed email flows.
   DeleteSesIdentityOnStackDelete:
     Type: String
     Default: "false"
@@ -153,7 +153,7 @@ Parameters:
     Description: Enable the pre sign-up Lambda trigger.
   EnablePreTokenGeneration:
     Type: String
-    Default: "false"
+    Default: "true"
     AllowedValues: ["true", "false"]
     Description: Enable the pre token generation Lambda trigger. Turn this on only if your Cognito feature plan supports V2 access token customization.
   EnablePostConfirmation:
@@ -170,7 +170,7 @@ Parameters:
   SesIdentity:
     Type: String
     Default: ""
-    Description: SES verified identity used by the custom email sender, for example example.com or no-reply@example.com. Leave empty to derive from the Cognito custom domain when auto-create is enabled.
+    Description: SES verified identity used by the custom email sender or email OTP MFA, for example example.com or no-reply@example.com. Leave empty when using Cognito managed email delivery.
   EmailFromAddress:
     Type: String
     Default: ""
@@ -280,7 +280,7 @@ Parameters:
     Type: String
     Default: "false"
     AllowedValues: ["true", "false"]
-    Description: Enable email OTP MFA. Requires SES developer email configuration.
+    Description: Enable email OTP MFA. Requires SES developer email configuration and a verified SES identity.
   EnableSmsMfa:
     Type: String
     Default: "false"
@@ -730,6 +730,13 @@ Resources:
                 - cognito-idp:UpdateUserPool
                 - cognito-idp:DescribeUserPoolDomain
               Resource: "*"
+            - Effect: Allow
+              Action:
+                - iam:CreateServiceLinkedRole
+              Resource: "*"
+              Condition:
+                StringEquals:
+                  iam:AWSServiceName: email.cognito-idp.amazonaws.com
             - Effect: Allow
               Action:
                 - ses:GetEmailIdentity

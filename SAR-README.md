@@ -138,6 +138,17 @@ The most important parameter groups are:
 - `CallbackBaseUrl`
 - `SubjectTemplate*`
 
+### Email delivery modes
+
+This stack supports two email modes:
+
+- **Cognito-managed email**: the simpler default path for standard Cognito emails.
+- **SES-backed HTML email**: required when you want custom HTML email templates and fully custom subject lines.
+
+If you enable HTML email delivery, provide an already verified SES identity for the most predictable deployment, or allow the stack to create the identity resource for you. Automatic creation does not guarantee that the identity is immediately verified and usable.
+
+If you enable **Email OTP MFA**, Amazon Cognito still requires SES-backed developer email configuration for that part of the flow, even if you otherwise prefer the simpler Cognito-managed email path.
+
 ### Security features
 
 - `EnableRecaptcha`
@@ -158,6 +169,7 @@ The most important parameter groups are:
 - The stack supports attaching triggers to an **existing user pool**.
 - Identity pool creation is currently wired to the **newly created** user pool/client path. Creating an identity pool for an already existing user pool is not yet covered by this version.
 - The Cognito custom email sender replaces the default Cognito email transport, so SES-related settings should be reviewed carefully before enabling it.
+- For the most reliable SES-backed deployments, pre-create and verify the SES identity before launching the stack.
 - If reCAPTCHA is enabled and a secret is supplied, the secret is stored in **SSM Parameter Store** as a secure string.
 - When the stack creates its own email template bucket, the deployment also includes helper logic to upload templates and clean up bucket contents when appropriate.
 

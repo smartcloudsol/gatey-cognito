@@ -496,6 +496,8 @@ async function updateUserPool(
   const emailIdentity = !clear
     ? props.ResolvedSesIdentity || props.SesIdentity || undefined
     : undefined;
+  const shouldUseDeveloperEmailConfiguration =
+    !clear && Boolean(emailIdentity) && parseBool(props.EnableEmailOtpMfa);
   const defaultFromAddress =
     props.EmailFromAddress ||
     ((props.ResolvedSesIdentity || props.SesIdentity || "").includes("@")
@@ -503,7 +505,18 @@ async function updateUserPool(
       : props.ResolvedSesIdentity || props.SesIdentity
         ? `no-reply@${props.ResolvedSesIdentity || props.SesIdentity}`
         : undefined);
-  const fromAddress = !clear ? defaultFromAddress : undefined;
+  const fromAddress = shouldUseDeveloperEmailConfiguration
+    ? defaultFromAddress
+    : undefined;
+  const emailConfiguration = clear
+    ? userPool.EmailConfiguration
+    : shouldUseDeveloperEmailConfiguration
+      ? pruneUndefined({
+          EmailSendingAccount: "DEVELOPER",
+          SourceArn: `arn:${process.env.AWS_PARTITION || "aws"}:ses:${process.env.AWS_REGION}:${process.env.AWS_ACCOUNT_ID}:identity/${emailIdentity}`,
+          From: fromAddress,
+        })
+      : { EmailSendingAccount: "COGNITO_DEFAULT" as const };
   const recoveryMechanisms = clear
     ? userPool.AccountRecoverySetting?.RecoveryMechanisms
     : resolveRecoveryMechanisms(props, autoVerifiedAttributes || []);
@@ -545,13 +558,7 @@ async function updateUserPool(
         DeviceConfiguration: clear
           ? userPool.DeviceConfiguration
           : resolveDeviceConfiguration(props),
-        EmailConfiguration: emailIdentity
-          ? pruneUndefined({
-              EmailSendingAccount: "DEVELOPER",
-              SourceArn: `arn:${process.env.AWS_PARTITION || "aws"}:ses:${process.env.AWS_REGION}:${process.env.AWS_ACCOUNT_ID}:identity/${emailIdentity}`,
-              From: fromAddress,
-            })
-          : userPool.EmailConfiguration,
+        EmailConfiguration: emailConfiguration,
         SmsConfiguration: smsConfiguration,
         UserPoolAddOns: userPool.UserPoolAddOns,
         AccountRecoverySetting:

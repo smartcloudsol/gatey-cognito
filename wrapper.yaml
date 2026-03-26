@@ -374,9 +374,9 @@ Parameters:
   # Lambda Triggers
   EnableCustomEmailSender:
     Type: String
-    Default: "true"
+    Default: "false"
     AllowedValues: ["true", "false"]
-    Description: "Enable custom email sender Lambda"
+    Description: "Enable custom email sender Lambda. Leave disabled to use Cognito managed email delivery"
 
   EnablePreSignUp:
     Type: String
@@ -386,7 +386,7 @@ Parameters:
 
   EnablePreTokenGeneration:
     Type: String
-    Default: "false"
+    Default: "true"
     AllowedValues: ["true", "false"]
     Description: "Enable pre token generation Lambda trigger"
 
@@ -405,13 +405,13 @@ Parameters:
   SesIdentity:
     Type: String
     Default: ""
-    Description: "SES verified identity (domain or email)"
+    Description: "SES verified identity (domain or email) used only for SES-backed email flows"
 
   AutoCreateSesIdentity:
     Type: String
-    Default: "true"
+    Default: "false"
     AllowedValues: ["true", "false"]
-    Description: "Automatically create and verify SES identity"
+    Description: "Automatically create and verify SES identity for SES-backed email flows"
 
   DeleteSesIdentityOnStackDelete:
     Type: String
