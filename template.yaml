@@ -680,12 +680,6 @@ Resources:
       BucketName: !Ref EmailTemplateBucket
       Prefix: email-templates/
 
-  CustomResourceFunctionLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub /aws/lambda/${AppName}-custom-resource
-      RetentionInDays: !Ref LogRetentionDays
-
   CustomResourceFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -697,6 +691,11 @@ Resources:
       Policies:
         - AWSLambdaBasicExecutionRole
         - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:PutRetentionPolicy
+              Resource: "*"
             - Effect: Allow
               Action:
                 - ssm:PutParameter
@@ -743,6 +742,14 @@ Resources:
                 - ses:CreateEmailIdentity
                 - ses:DeleteEmailIdentity
               Resource: "*"
+
+  CustomResourceFunctionLogGroupManager:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt CustomResourceFunction.Arn
+      Action: LogGroupManager
+      LogGroupName: !Sub /aws/lambda/${AppName}-custom-resource
+      RetentionInDays: !Ref LogRetentionDays
 
   PreSignUpFunctionLogGroup:
     Type: AWS::Logs::LogGroup

@@ -14,6 +14,11 @@ import {
   ListObjectsV2Command,
 } from "@aws-sdk/client-s3";
 import {
+  CloudWatchLogsClient,
+  CreateLogGroupCommand,
+  PutRetentionPolicyCommand,
+} from "@aws-sdk/client-cloudwatch-logs";
+import {
   DeleteParameterCommand,
   PutParameterCommand,
   SSMClient,
@@ -44,6 +49,7 @@ type Event = {
 
 const CLOUDFRONT_ZONE_ID = "Z2FDTNDATAQYW2";
 const ssmClient = new SSMClient({});
+const logsClient = new CloudWatchLogsClient({});
 
 async function findHostedZoneId(fqdn: string): Promise<string | undefined> {
   const labels = fqdn.replace(/\.$/, "").split(".");
@@ -326,6 +332,46 @@ async function handleSSMParameter(event: Event, props: Record<string, string>) {
   );
 
   return { Name: name };
+}
+
+async function handleLogGroupManager(
+  event: Event,
+  props: Record<string, string>,
+) {
+  const logGroupName = props.LogGroupName;
+  const retentionValue = props.RetentionInDays;
+
+  if (!logGroupName) {
+    throw new Error("LogGroupName is required for LogGroupManager");
+  }
+
+  if (event.RequestType === "Delete") {
+    return { LogGroupName: logGroupName, Status: "Deleted" };
+  }
+
+  await logsClient
+    .send(new CreateLogGroupCommand({ logGroupName }))
+    .catch((error: Error & { name?: string }) => {
+      if (error.name !== "ResourceAlreadyExistsException") {
+        throw error;
+      }
+    });
+
+  if (retentionValue) {
+    const retentionInDays = Number(retentionValue);
+    if (!Number.isFinite(retentionInDays)) {
+      throw new Error(`Invalid RetentionInDays: ${retentionValue}`);
+    }
+    await logsClient.send(
+      new PutRetentionPolicyCommand({
+        logGroupName,
+        retentionInDays,
+      }),
+    );
+    return { LogGroupName: logGroupName, RetentionInDays: retentionInDays };
+  }
+
+  return { LogGroupName: logGroupName };
 }
 
 function pruneUndefined<T extends object>(input: T): T {
@@ -720,6 +766,9 @@ export const handler = async (event: Event): Promise<void> => {
         break;
       case "EnsureSesIdentity":
         data = await handleEnsureSesIdentity(event, event.ResourceProperties);
+        break;
+      case "LogGroupManager":
+        data = await handleLogGroupManager(event, event.ResourceProperties);
         break;
       default:
         throw new Error(`Unsupported custom resource action: ${type}`);
